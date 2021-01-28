@@ -1,0 +1,276 @@
+<html>
+<head>
+    <title>BasicChat</title>
+    <script src="sockjs-0.3.4.js"></script>
+    <script src="stomp.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.0/jquery.min.js"></script>
+
+    <script type="text/javascript">
+
+            var stompClient = null;
+            var stompClientUser = null;
+
+            function initialize(){
+
+                var socket = new SockJS('/chat');
+                var socketUser = new SockJS('/updusr');
+                stompClient = Stomp.over(socket);
+                stompClientUser = Stomp.over(socketUser);
+
+                stompClient.connect({}, function(frame) {
+                    setConnected(true);
+                    console.log('Connected: ' + frame);
+                    stompClient.subscribe('/topic/messages', function(messageOutput) {
+                        showMessageOutput(JSON.parse(messageOutput.body));
+
+                    });
+                });
+
+                stompClientUser.connect({}, function() {
+                     stompClientUser.send("/updusr", {}, {});
+                     stompClientUser.subscribe('/topic/userlist', function() {
+                        updateUserListFromStomp();
+                    });
+                });
+
+                document.getElementById('from').disabled = true;
+                document.getElementById('fromPsw').disabled = true;
+                var nameUser = document.getElementById('from').value;
+                updateUserList(nameUser, true);
+
+
+
+
+
+            }
+
+            function updateUserListFromStomp(){
+            $.ajax
+                   ({
+                        method: "GET",
+                        url: '/updateUserStomp',
+                        contentType: "application/json; charset=utf-8",
+                        data:{
+
+                        },
+                        success: function(response) {
+                                document.getElementById('userlist').innerHTML = "";
+
+                                if (response != null){
+                                    for (i in response){
+
+                                       let userLi = document.createElement("li");
+                                       userLi.innerHTML = "<h1 id=" + response[i] + " onclick=reply(this.id);>" + response[i] + "</h1>";
+                                       document.getElementById('userlist').append(userLi);
+                                    }
+                                }
+
+                        }
+                   });
+
+            }
+
+            function updateUserList(nameFrom, updateUser){
+                $.ajax
+                   ({
+                        method: "GET",
+                        url: '/updateUser',
+                        contentType: "application/json; charset=utf-8",
+                        data:{
+                            name: nameFrom,
+                            updateUser: updateUser
+                        },
+                        success: function(response) {
+                                document.getElementById('userlist').innerHTML = "";
+
+                                if (response != null){
+                                    for (i in response){
+
+                                       let userLi = document.createElement("li");
+                                       userLi.innerHTML = userLi.innerHTML = "<h1 id=" + response[i] + " onclick=reply(this.id);>" + response[i] + "</h1>";
+                                       document.getElementById('userlist').append(userLi);
+                                    }
+                                }
+
+                        }
+                   });
+            }
+
+            function reply(id){
+              document.getElementById('msgnew').value = "@" + id + ": ";
+            }
+
+            function setConnected(connected) {
+                document.getElementById('from').disabled = true;
+                document.getElementById('fromPsw').disabled = true.disabled = connected;
+                document.getElementById('connect').disabled = connected;
+                document.getElementById('disconnect').disabled = !connected;
+                document.getElementById('send').disabled = !connected;
+
+            }
+
+            function connect() {
+
+                let checkboxStatus = $("#newuser").prop('checked');
+                let nameFrom = document.getElementById('from').value;
+                let passwordFrom = document.getElementById('fromPsw').value;
+                let namePass = {"name":$("#from").val(),"password":$("#fromPsw").val()};
+
+                if(checkboxStatus == false) {
+                   $.ajax
+                   ({
+                        method: "GET",
+                        url: '/check',
+                        contentType: "application/json; charset=utf-8",
+                        data:{
+                            name: nameFrom,
+                            password: passwordFrom
+                        },
+                        success: function(response) {
+                            if (response.result == false){
+                                alert(response.error);
+                            } else{
+                                    initialize();
+                                    updateUserList(nameFrom, true);
+
+                            }
+                        }
+                    });
+                }
+                else{
+                   $.ajax
+                   ({
+                    method: "POST",
+                        url: '/register',
+                        contentType: "application/json; charset=utf-8",
+                        data:
+                           JSON.stringify(namePass),
+                        success: function(response) {
+                           if (response.result == false){
+                                alert(response.error);
+                            } else{
+                                    alert("Пользователь зарегистрирован");
+                                    initialize();
+                                    updateUserList(nameFrom, true);
+
+                                }
+                        }
+                    });
+                }
+
+            }
+
+
+
+            function disconnect() {
+
+                if(stompClient != null) {
+                    var nameUser = document.getElementById('from').value;
+                    if (nameUser != '') {updateUserList(nameUser, false);}
+                    stompClientUser.send("/updusr", {}, JSON.stringify({'usersOnline': "disconnect"}) );
+                    stompClient.disconnect();
+                    stompClientUser.disconnect();
+                }
+                setConnected(false);
+                console.log("Disconnected");
+                document.getElementById('from').disabled = false;
+                document.getElementById('fromPsw').disabled = false;
+
+
+
+            }
+
+            function sendMessage() {
+                var from = document.getElementById('from').value;
+                var text = document.getElementById('msgnew').value;
+
+                if(text != ''){
+                    stompClient.send("/chat", {},
+                      JSON.stringify({'author':from, 'textMessage':text}));
+                }
+
+                stompClientUser.send("/updusr", {}, JSON.stringify({'usersOnline': "useless"}) );
+
+                  document.getElementById('msgnew').value = '';
+            }
+
+            function showMessageOutput(messageOutput) {
+                var response = document.getElementById('response');
+                var msgList = document.getElementById('msglist');
+
+                var textMsg = "\n" + messageOutput.author + ": " + messageOutput.textMessage + " (" + messageOutput.sendTime + ")";
+                msgList.append(textMsg);
+
+            }
+        </script>
+    <style>
+        body {
+          background-color: grey;
+          text-align: center;
+          color: white;
+          font-family: Arial, Helvetica, sans-serif;
+        }
+        textarea {
+
+            resize: none;
+           }
+
+    </style>
+
+</head>
+<body onload="disconnect()">
+<img src="logo.jpg" alt="Avatar" style="width:200px">
+<h1>BasicChat</h1>
+
+<p>Зарегистрируйтесь для того чтобы писать сообщения</p>
+
+<div>
+    <input type="text" id="from" placeholder="Введите имя"/>
+    <input type="password" id="fromPsw" placeholder="Введите пароль"/>
+    <input type="checkbox" id="newuser"> Зарегистрировать
+</div>
+<br />
+<div>
+    <button id="connect" onclick="connect();">Войти в чат</button>
+    <button id="disconnect" disabled="disabled" onclick="disconnect();">
+        Выйти
+    </button>
+</div>
+
+<p align=left>
+<table align=center>
+    <tr>
+        <td>
+            Онлайн:
+        </td>
+        <td>
+            Сообщения:
+        </td>
+    </tr>
+    <tr>
+        <td valign="top">
+        <!--        	Добавляем сюда теги с пользователями-->
+            <div>
+                <ul type="disc" id="userlist">
+                </ul>
+            </div>
+        </td>
+        <td colspan=2>
+        	<textarea disabled="disabled" rows=20 cols=70 id=msglist>
+            </textarea>
+        </td>
+    </tr>
+    <tr>
+        <td>Введите сообщение</td>
+        <td align="left"> <textarea rows=1 cols=50 id=msgnew></textarea>
+        </td>
+        <td>
+            <input type=button id=send value="Отправить" disabled="disabled" onclick="sendMessage();">
+        </td>
+    </tr>
+
+</table>
+</p>
+
+</body>
+</html>
